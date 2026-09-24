@@ -14,10 +14,22 @@ cancha táctica, reloj y eventos, y lo archivás con estadísticas y resumen. Pe
 | **Banco de frases** | Frases por categoría (apertura, gol, cierre…), favoritas y ordenadas por uso. Cada cuenta arranca con un set inicial. |
 | **Notas** | Apuntes privados, fijables, asociables a un partido. |
 | **Equipos y planteles** | Carga manual (con “carga rápida” pegando la lista) o importación desde la API deportiva. |
-| **Colaboración** | Compartí un partido por email con permiso de *editor* o *solo lectura*. Todos ven los cambios al instante (WebSocket) y quién está conectado. |
+| **Equipo de transmisión** | Compartí un partido por email con un **rol** (Editor, Campo, Comentarista, Solo lectura). Todos ven los cambios al instante (WebSocket), quién está conectado y **quién cargó cada evento**. Podés guardar un **equipo de transmisión** y sumarlo con un click, o dejarlo como predeterminado para que cada partido nuevo lo incluya. Hay **chat** por partido. |
 | **Integración deportiva** | API-Football: buscar partidos por fecha/liga/equipo, importar partido + plantillas + **alineación oficial** con posiciones en la cancha. |
 
 El reloj lo lleva el **servidor** (no el navegador): si se cierra la pestaña o se cae el WiFi, el partido sigue marcando bien y todos los dispositivos ven la misma hora.
+
+## Roles en un partido
+
+| Rol | Puede |
+| --- | --- |
+| **Propietario** (creador) | Todo, incluido borrar el partido y gestionar al equipo. |
+| **Editor** | Reloj, alineaciones, fichas, eventos, cambios, resumen y datos del partido. |
+| **Campo** | Cargar eventos y cambios desde el estadio; edita/borra solo lo que cargó. No toca el reloj ni las fichas. |
+| **Comentarista** | Ver todo, escribir notas (eventos tipo nota) y chatear. |
+| **Solo lectura** | Ver todo y chatear. |
+
+Los permisos los valida siempre el servidor (`server/lib/permissions.js`); la interfaz solo oculta lo que el rol no puede usar.
 
 ## Arquitectura
 

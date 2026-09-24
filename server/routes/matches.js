@@ -7,13 +7,18 @@ import { matchAccess } from '../lib/access.js'
 import {
   EVENT_TYPES, PERIOD_EVENT_TEXT, PERIOD_START, applyClockAction, elapsedSeconds, minuteLabel, parseFormation,
 } from '../lib/domain.js'
-import { applyLineup, createMatch, insertMatchPlayers, loadBundle, recompute } from '../lib/matchService.js'
+import { ROLES, canCreateEvent, canModifyEvent } from '../lib/permissions.js'
+import { addCrewToMatch, applyLineup, createMatch, insertMatchPlayers, loadBundle, recompute } from '../lib/matchService.js'
 
 const router = Router()
 
-const edit = matchAccess({ edit: true })
-const view = matchAccess()
-const ownerOnly = matchAccess({ ownerOnly: true })
+// Cada ruta declara qué acción exige; los roles que la permiten viven en lib/permissions.js.
+const edit = matchAccess('manage') // owner + editor: reloj, alineaciones, fichas, datos
+const view = matchAccess('view')
+const ownerOnly = matchAccess('members')
+const substituteAccess = matchAccess('substitute')
+const eventAccess = matchAccess('event')
+const chatAccess = matchAccess('chat')
 
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'color inválido (#rrggbb)')
 const side = z.enum(['home', 'away'])
@@ -185,9 +190,12 @@ const SCORING_TYPES = ['goal', 'own_goal', 'penalty_goal']
 
 router.post(
   '/:id/events',
-  edit,
+  eventAccess,
   wrap(async (req, res) => {
     const data = parse(eventSchema, req.body)
+    if (!canCreateEvent(req.role, data.type)) {
+      throw new HttpError(403, 'Tu rol solo permite cargar notas en este partido.')
+    }
     await tx(async (client) => {
       const { rows } = await client.query('SELECT * FROM matches WHERE id = $1 FOR UPDATE', [req.matchId])
       const match = rows[0]
@@ -232,13 +240,29 @@ const eventPatchSchema = z.object({
   description: z.string().trim().max(500).optional(),
 })
 
+// Los editores modifican cualquier evento; campo y comentarista, solo los que cargaron ellos.
+async function assertCanModifyEvent(req, eventId) {
+  const { rows } = await query('SELECT created_by, type FROM match_events WHERE id = $1 AND match_id = $2', [
+    eventId, req.matchId,
+  ])
+  if (!rows[0]) throw new HttpError(404, 'Evento no encontrado.')
+  if (!canModifyEvent(req.role, rows[0], req.user.id)) {
+    throw new HttpError(403, 'Solo podés modificar los eventos que cargaste vos.')
+  }
+}
+
 router.patch(
   '/:id/events/:eventId',
-  edit,
+  view,
   wrap(async (req, res) => {
     const data = parse(eventPatchSchema, req.body)
     const cols = Object.keys(data)
     if (cols.length === 0) throw new HttpError(400, 'Nada para actualizar.')
+    await assertCanModifyEvent(req, idParam(req.params.eventId, 'evento'))
+    // Campo/comentarista no pueden cambiar el tipo ni el equipo (alteraría el marcador).
+    if (!['owner', 'editor'].includes(req.role) && ('type' in data || 'side' in data)) {
+      throw new HttpError(403, 'Tu rol no puede cambiar el tipo ni el equipo de un evento.')
+    }
     await tx(async (client) => {
       const sets = cols.map((c, i) => `${c} = $${i + 3}`)
       const { rowCount } = await client.query(
@@ -254,8 +278,9 @@ router.patch(
 
 router.delete(
   '/:id/events/:eventId',
-  edit,
+  view,
   wrap(async (req, res) => {
+    await assertCanModifyEvent(req, idParam(req.params.eventId, 'evento'))
     await tx(async (client) => {
       await client.query('DELETE FROM match_events WHERE id = $1 AND match_id = $2', [
         idParam(req.params.eventId, 'evento'), req.matchId,
@@ -361,7 +386,7 @@ const subSchema = z.object({ out_id: z.number().int().positive(), in_id: z.numbe
 
 router.post(
   '/:id/substitution',
-  edit,
+  substituteAccess,
   wrap(async (req, res) => {
     const data = parse(subSchema, req.body)
     await tx(async (client) => {
@@ -398,7 +423,7 @@ router.post(
 
 const memberSchema = z.object({
   email: z.string().trim().toLowerCase().email('email inválido'),
-  role: z.enum(['editor', 'viewer']).default('editor'),
+  role: z.enum(ROLES).default('editor'),
 })
 
 router.post(
@@ -431,6 +456,51 @@ router.delete(
       return res.status(204).end()
     }
     await publish(res, req.matchId)
+  }),
+)
+
+// Suma de una vez a todos los integrantes de un equipo de transmisión guardado.
+router.post(
+  '/:id/members/crew',
+  ownerOnly,
+  wrap(async (req, res) => {
+    const { crew_id } = parse(z.object({ crew_id: z.number().int().positive() }), req.body)
+    const owned = await query('SELECT 1 FROM crews WHERE id = $1 AND owner_id = $2', [crew_id, req.user.id])
+    if (!owned.rows[0]) throw new HttpError(404, 'Equipo de transmisión no encontrado.')
+    await tx((client) => addCrewToMatch(client, req.matchId, crew_id, req.user.id))
+    await publish(res, req.matchId, 201)
+  }),
+)
+
+// ---------- Chat del partido ----------
+
+const MESSAGE_SELECT = `SELECT m.id, m.user_id, m.body, m.created_at, u.name AS author_name
+   FROM match_messages m LEFT JOIN users u ON u.id = m.user_id`
+
+router.get(
+  '/:id/messages',
+  chatAccess,
+  wrap(async (req, res) => {
+    const { rows } = await query(
+      `SELECT * FROM (${MESSAGE_SELECT} WHERE m.match_id = $1 ORDER BY m.id DESC LIMIT 200) recent ORDER BY id`,
+      [req.matchId],
+    )
+    res.json({ messages: rows })
+  }),
+)
+
+router.post(
+  '/:id/messages',
+  chatAccess,
+  wrap(async (req, res) => {
+    const { body } = parse(z.object({ body: z.string().trim().min(1, 'escribí un mensaje').max(1000) }), req.body)
+    const inserted = await query(
+      'INSERT INTO match_messages (match_id, user_id, body) VALUES ($1, $2, $3) RETURNING id',
+      [req.matchId, req.user.id, body],
+    )
+    const { rows } = await query(`${MESSAGE_SELECT} WHERE m.id = $1`, [inserted.rows[0].id])
+    broadcast(req.matchId, { type: 'message', message: rows[0] })
+    res.status(201).json({ message: rows[0] })
   }),
 )
 

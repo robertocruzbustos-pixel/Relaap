@@ -7,7 +7,7 @@ import { useFeedback } from './ui.jsx'
  * Botonera para cargar eventos con un click.
  * Si hay un jugador seleccionado en la cancha, el evento se le asigna automáticamente.
  */
-export default function EventPad({ match, players, selected, onClearSelected, onRegister, onSubstitute, disabled }) {
+export default function EventPad({ match, players, selected, perms, onClearSelected, onRegister, onSubstitute }) {
   const feedback = useFeedback()
   const [side, setSide] = useState(null)
   const [playerId, setPlayerId] = useState('')
@@ -18,9 +18,12 @@ export default function EventPad({ match, players, selected, onClearSelected, on
     .filter((p) => p.on_pitch && p.side === activeSide)
     .sort((a, b) => (a.number ?? 999) - (b.number ?? 999))
   const chosenId = selected?.id ?? (playerId ? Number(playerId) : null)
+  // Cada rol ve solo los botones que puede usar (el comentarista, únicamente "Nota").
+  const padTypes = PAD_TYPES.filter((t) => (t === 'substitution' ? perms.substitute : perms.canCreateEvent(t)))
 
   const fire = async (type) => {
     if (type === 'substitution') return onSubstitute({ side: activeSide ?? 'home', outId: chosenId ?? '' })
+    if (type === 'note' && !description.trim()) return feedback.error('Escribí el texto de la nota en el campo de detalle.')
     if (NEEDS_SIDE.includes(type) && !activeSide) return feedback.error('Elegí el equipo (o tocá al jugador en la cancha).')
     const ok = await onRegister({ type, side: activeSide, match_player_id: chosenId, description: description.trim() || undefined })
     if (ok) {
@@ -91,7 +94,7 @@ export default function EventPad({ match, players, selected, onClearSelected, on
       />
 
       <div className="grid grid-cols-3 gap-1.5">
-        {PAD_TYPES.map((type) => {
+        {padTypes.map((type) => {
           const meta = EVENT_META[type]
           const Icon = meta.icon
           const big = type === 'goal'
@@ -99,7 +102,6 @@ export default function EventPad({ match, players, selected, onClearSelected, on
             <button
               key={type}
               onClick={() => fire(type)}
-              disabled={disabled}
               className={`flex flex-col items-center justify-center gap-1 rounded-lg border px-1 py-2.5 text-xs font-medium transition-colors disabled:opacity-40 ${
                 big
                   ? 'col-span-3 flex-row gap-2 border-emerald-500/60 bg-emerald-500/15 py-3 text-base text-emerald-200 hover:bg-emerald-500/25'

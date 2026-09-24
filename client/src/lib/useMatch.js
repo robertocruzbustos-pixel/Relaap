@@ -8,7 +8,7 @@ const deriveRole = (bundle, userId) => {
 
 /**
  * Carga un partido, se mantiene sincronizado por WebSocket y expone acciones optimistas.
- * Devuelve { loading, error, bundle, role, presence, connected, apply, reload, serverNow, movePlayer, updatePlayer }.
+ * Devuelve el estado del partido, acciones optimistas y el chat (messages, unread, sendMessage).
  */
 export function useMatch(matchId, userId) {
   const id = Number(matchId)
@@ -17,6 +17,9 @@ export function useMatch(matchId, userId) {
   const [connected, setConnected] = useState(false)
   const offsetRef = useRef(0) // hora del servidor - hora local
   const hasConnected = useRef(false)
+  const [messages, setMessages] = useState([])
+  const [unread, setUnread] = useState(0)
+  const chatVisible = useRef(false)
 
   const syncClock = (serverTime) => {
     if (serverTime) offsetRef.current = serverTime - Date.now()
@@ -41,10 +44,21 @@ export function useMatch(matchId, userId) {
     }
   }, [id, apply])
 
+  const loadMessages = useCallback(async () => {
+    try {
+      setMessages((await api.get(`/matches/${id}/messages`)).messages)
+    } catch {
+      /* el chat no es crítico: si falla, el resto del partido sigue funcionando */
+    }
+  }, [id])
+
   useEffect(() => {
     setState({ loading: true, error: null, bundle: null, role: null })
+    setMessages([])
+    setUnread(0)
     reload()
-  }, [reload])
+    loadMessages()
+  }, [reload, loadMessages])
 
   useEffect(() => {
     let ws
@@ -60,7 +74,10 @@ export function useMatch(matchId, userId) {
         setConnected(true)
         ws.send(JSON.stringify({ type: 'subscribe', matchId: id }))
         // Tras una reconexión se pudo perder algún mensaje: se recarga el estado completo.
-        if (hasConnected.current) reload()
+        if (hasConnected.current) {
+          reload()
+          loadMessages()
+        }
         hasConnected.current = true
       }
       ws.onmessage = (e) => {
@@ -79,6 +96,9 @@ export function useMatch(matchId, userId) {
               ? { ...s, bundle: { ...s.bundle, players: s.bundle.players.map((p) => (p.id === msg.player.id ? msg.player : p)) } }
               : s,
           )
+        } else if (msg.type === 'message') {
+          setMessages((list) => (list.some((m) => m.id === msg.message.id) ? list : [...list, msg.message]))
+          if (!chatVisible.current && msg.message.user_id !== userId) setUnread((n) => n + 1)
         } else if (msg.type === 'presence') setPresence(msg.users)
         else if (msg.type === 'members_changed') reload()
         else if (msg.type === 'deleted') setState((s) => ({ ...s, error: 'deleted' }))
@@ -98,7 +118,7 @@ export function useMatch(matchId, userId) {
       clearTimeout(timer)
       ws?.close()
     }
-  }, [id, apply, reload])
+  }, [id, apply, reload, loadMessages, userId])
 
   const serverNow = useCallback(() => Date.now() + offsetRef.current, [])
 
@@ -121,5 +141,22 @@ export function useMatch(matchId, userId) {
 
   const movePlayer = useCallback((playerId, x, y) => updatePlayer(playerId, { x, y }), [updatePlayer])
 
-  return { ...state, presence, connected, apply, reload, serverNow, movePlayer, updatePlayer }
+  const sendMessage = useCallback(
+    async (body) => {
+      const d = await api.post(`/matches/${id}/messages`, { body })
+      setMessages((list) => (list.some((m) => m.id === d.message.id) ? list : [...list, d.message]))
+    },
+    [id],
+  )
+
+  // El panel de chat avisa cuándo está a la vista para no contar como "sin leer" lo que ya se ve.
+  const setChatVisible = useCallback((visible) => {
+    chatVisible.current = visible
+    if (visible) setUnread(0)
+  }, [])
+
+  return {
+    ...state, presence, connected, apply, reload, serverNow, movePlayer, updatePlayer,
+    messages, unread, sendMessage, setChatVisible,
+  }
 }

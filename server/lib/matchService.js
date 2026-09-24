@@ -13,7 +13,11 @@ export async function loadBundle(matchId) {
         ORDER BY side, is_starter DESC, ${POS_ORDER_SQL}, number NULLS LAST, id`,
       [matchId],
     ),
-    query('SELECT * FROM match_events WHERE match_id = $1 ORDER BY id', [matchId]),
+    query(
+      `SELECT e.*, u.name AS author_name FROM match_events e
+         LEFT JOIN users u ON u.id = e.created_by WHERE e.match_id = $1 ORDER BY e.id`,
+      [matchId],
+    ),
     query(
       `SELECT u.id, u.name, u.email, mm.role FROM match_members mm
          JOIN users u ON u.id = mm.user_id WHERE mm.match_id = $1 ORDER BY u.name`,
@@ -138,5 +142,25 @@ export async function createMatch(client, ownerId, spec) {
       await applyLineup(client, match.id, side, s.formation)
     }
   }
+  await applyDefaultCrew(client, match.id, ownerId)
   return match
+}
+
+/** Suma al partido a los integrantes del equipo de transmisión predeterminado del usuario (si tiene uno). */
+export async function applyDefaultCrew(client, matchId, ownerId) {
+  const { rows } = await client.query('SELECT id FROM crews WHERE owner_id = $1 AND is_default', [ownerId])
+  if (rows[0]) await addCrewToMatch(client, matchId, rows[0].id, ownerId)
+}
+
+/** Copia los integrantes de un equipo a un partido (con su rol). Devuelve cuántos sumó. */
+export async function addCrewToMatch(client, matchId, crewId, ownerId) {
+  const { rowCount } = await client.query(
+    `INSERT INTO match_members (match_id, user_id, role)
+     SELECT $1, cm.user_id, cm.role
+       FROM crew_members cm JOIN crews c ON c.id = cm.crew_id
+      WHERE c.id = $2 AND c.owner_id = $3 AND cm.user_id <> $3
+     ON CONFLICT (match_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+    [matchId, crewId, ownerId],
+  )
+  return rowCount
 }

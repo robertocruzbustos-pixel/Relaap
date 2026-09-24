@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { CircleCheck, ExternalLink, KeyRound, LogOut, Trash2 } from 'lucide-react'
+import { CircleCheck, ExternalLink, KeyRound, LogOut, Trash2, Users } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.jsx'
 import { Field, PageHeader, useAction, useFeedback } from '../components/ui.jsx'
@@ -45,6 +46,14 @@ export default function Settings() {
           <button className="btn-primary" disabled={busy || name === user.name}>Guardar</button>
         </form>
         <p className="mt-3 text-xs text-slate-500">Email: {user.email}</p>
+      </section>
+
+      <section className="card p-5">
+        <h2 className="mb-1 flex items-center gap-2 font-display text-xl font-semibold tracking-wide">
+          <Users className="h-5 w-5 text-emerald-400" /> Equipo de transmisión
+        </h2>
+        <p className="mb-3 text-sm text-slate-400">Guardá a tus comentaristas y colaboradores de campo para sumarlos a cada partido con un click.</p>
+        <Link to="/equipo" className="btn-secondary">Gestionar mi equipo</Link>
       </section>
 
       <section className="card p-5">

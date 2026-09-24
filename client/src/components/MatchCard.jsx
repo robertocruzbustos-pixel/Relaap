@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { CalendarDays, MapPin, Users } from 'lucide-react'
+import { ROLE_LABEL } from '../lib/constants.js'
 import { formatDateTime } from '../lib/format.js'
 import { StatusBadge, TeamDot } from './ui.jsx'
 
@@ -40,7 +41,7 @@ export default function MatchCard({ match }) {
         )}
         {match.role !== 'owner' && (
           <span className="flex items-center gap-1 text-sky-300">
-            <Users className="h-3.5 w-3.5" /> de {match.owner_name}
+            <Users className="h-3.5 w-3.5" /> de {match.owner_name} · {ROLE_LABEL[match.role]}
           </span>
         )}
       </div>

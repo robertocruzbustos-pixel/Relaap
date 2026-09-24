@@ -12,6 +12,7 @@ import matchRoutes from './routes/matches.js'
 import phraseRoutes from './routes/phrases.js'
 import noteRoutes from './routes/notes.js'
 import sportsRoutes from './routes/sports.js'
+import crewRoutes from './routes/crews.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const clientDist = path.resolve(here, '../client/dist')
@@ -37,6 +38,7 @@ export function createApp() {
   app.use('/api/phrases', requireAuth, phraseRoutes)
   app.use('/api/notes', requireAuth, noteRoutes)
   app.use('/api/sports', requireAuth, sportsRoutes)
+  app.use('/api/crews', requireAuth, crewRoutes)
   app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }))
 
   // En producción el mismo servicio sirve el frontend compilado.

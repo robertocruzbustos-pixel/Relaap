@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ClipboardList, FileText, Radio, Share2, Trash2 } from 'lucide-react'
+import { ClipboardList, FileText, MessageCircle, Radio, Share2, Trash2, X } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.jsx'
+import { ROLE_LABEL } from '../lib/constants.js'
+import { permissionsFor } from '../lib/permissions.js'
 import { useMatch } from '../lib/useMatch.js'
+import ChatPanel from '../components/ChatPanel.jsx'
 import ScoreBoard from '../components/ScoreBoard.jsx'
 import ShareModal from '../components/ShareModal.jsx'
 import { EmptyState, PageLoader, useFeedback } from '../components/ui.jsx'
@@ -24,6 +27,7 @@ export default function MatchPage() {
   const feedback = useFeedback()
   const [params, setParams] = useSearchParams()
   const [sharing, setSharing] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
   const m = useMatch(id, user.id)
 
   const status = m.bundle?.match.status
@@ -51,8 +55,14 @@ export default function MatchPage() {
     )
   }
 
-  const canEdit = m.role === 'owner' || m.role === 'editor'
-  const ctx = { ...m, matchId: Number(id), canEdit }
+  const perms = permissionsFor(m.role, user.id)
+  // Quién es quién en el chat: dueño + integrantes con su rol.
+  const roleLabels = {
+    [m.bundle.match.owner_id]: ROLE_LABEL.owner,
+    ...Object.fromEntries(m.bundle.members.map((mem) => [mem.id, ROLE_LABEL[mem.role]])),
+  }
+  const ctx = { ...m, matchId: Number(id), canEdit: perms.manage, perms, userId: user.id, roleLabels }
+  const showChatButton = tab !== 'vivo' // en "En vivo" el chat es una pestaña del panel lateral
 
   const remove = async () => {
     const ok = await feedback.confirm({
@@ -92,6 +102,16 @@ export default function MatchPage() {
           ))}
         </div>
         <div className="mb-1 ml-auto flex gap-1.5">
+          {showChatButton && (
+            <button className="btn-secondary btn-sm relative" onClick={() => setChatOpen(true)}>
+              <MessageCircle className="h-4 w-4" /> Chat
+              {m.unread > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 px-1 text-[9px] font-bold text-emerald-950">
+                  {m.unread > 9 ? '9+' : m.unread}
+                </span>
+              )}
+            </button>
+          )}
           <button className="btn-secondary btn-sm" onClick={() => setSharing(true)}>
             <Share2 className="h-4 w-4" /> Compartir{m.bundle.members.length > 0 ? ` (${m.bundle.members.length})` : ''}
           </button>
@@ -106,6 +126,25 @@ export default function MatchPage() {
       {tab === 'previa' && <PrematchTab ctx={ctx} />}
       {tab === 'vivo' && <LiveTab ctx={ctx} />}
       {tab === 'post' && <PostmatchTab ctx={ctx} />}
+
+      {chatOpen && showChatButton && (
+        <aside className="no-print fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-slate-700 bg-slate-900 p-4 shadow-2xl sm:w-96" aria-label="Chat del equipo">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-display text-xl font-semibold tracking-wide">Chat del equipo</h2>
+            <button className="btn-ghost btn-sm" onClick={() => setChatOpen(false)} aria-label="Cerrar chat">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <ChatPanel
+            messages={m.messages}
+            userId={user.id}
+            roleLabels={roleLabels}
+            onSend={m.sendMessage}
+            setChatVisible={m.setChatVisible}
+            height="min-h-0 flex-1"
+          />
+        </aside>
+      )}
 
       {sharing && (
         <ShareModal bundle={m.bundle} role={m.role} userId={user.id} matchId={Number(id)} apply={m.apply} onClose={() => setSharing(false)} />

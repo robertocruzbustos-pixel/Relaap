@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Archive, LayoutDashboard, LogOut, Mic, NotebookPen, Plus, Settings, Shield, MessageSquareQuote } from 'lucide-react'
+import { Archive, LayoutDashboard, LogOut, Mic, NotebookPen, Plus, Settings, Shield, MessageSquareQuote, Users } from 'lucide-react'
 import { useAuth } from '../lib/auth.jsx'
 
 const NAV = [
@@ -8,6 +8,7 @@ const NAV = [
   { to: '/equipos', label: 'Equipos', icon: Shield },
   { to: '/frases', label: 'Frases', icon: MessageSquareQuote },
   { to: '/notas', label: 'Notas', icon: NotebookPen },
+  { to: '/equipo', label: 'Mi equipo', icon: Users, desktopOnly: true },
   { to: '/ajustes', label: 'Ajustes', icon: Settings },
 ]
 
@@ -58,7 +59,7 @@ export default function Layout() {
 
       {/* Navegación inferior (móvil / tablet) */}
       <nav className="no-print fixed inset-x-0 bottom-0 z-40 flex border-t border-slate-800 bg-slate-950/95 backdrop-blur lg:hidden" aria-label="Principal">
-        {NAV.slice(0, 5).map(({ to, label, icon: Icon, end }) => (
+        {NAV.filter((n) => !n.desktopOnly && n.to !== '/ajustes').map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}

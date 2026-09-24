@@ -17,8 +17,19 @@ export default function ScoreBoard({ match, serverNow, presence, connected }) {
         </Link>
         <div className="flex items-center gap-3 text-xs text-slate-400">
           {presence.length > 1 && (
-            <span title={presence.join(', ')} className="rounded-full bg-sky-500/15 px-2 py-0.5 text-sky-300">
-              {presence.length} conectados
+            <span className="flex items-center gap-1.5" aria-label={`Conectados: ${presence.join(', ')}`}>
+              <span className="flex -space-x-1.5">
+                {presence.slice(0, 5).map((name) => (
+                  <span
+                    key={name}
+                    title={name}
+                    className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-900 bg-sky-500/25 text-[10px] font-semibold uppercase text-sky-200"
+                  >
+                    {name.trim()[0]}
+                  </span>
+                ))}
+              </span>
+              <span className="text-sky-300">{presence.length} conectados</span>
             </span>
           )}
           <span className={`flex items-center gap-1 ${connected ? 'text-emerald-400' : 'text-amber-400'}`} title={connected ? 'Sincronizado en tiempo real' : 'Reconectando…'}>

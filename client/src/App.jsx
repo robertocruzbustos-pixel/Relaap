@@ -16,6 +16,7 @@ const TeamDetail = lazy(() => import('./pages/TeamDetail.jsx'))
 const Phrases = lazy(() => import('./pages/Phrases.jsx'))
 const Notes = lazy(() => import('./pages/Notes.jsx'))
 const Settings = lazy(() => import('./pages/Settings.jsx'))
+const Crews = lazy(() => import('./pages/Crews.jsx'))
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth()
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="equipos/:id" element={<TeamDetail />} />
           <Route path="frases" element={<Phrases />} />
           <Route path="notas" element={<Notes />} />
+          <Route path="equipo" element={<Crews />} />
           <Route path="ajustes" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

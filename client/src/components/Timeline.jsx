@@ -32,7 +32,7 @@ export function describeEvent(e, match) {
   }
 }
 
-export default function Timeline({ events, match, canEdit, apply, matchId, emptyText = 'Todavía no hay eventos.' }) {
+export default function Timeline({ events, match, canEditEvent, showAuthors = false, apply, matchId, emptyText = 'Todavía no hay eventos.' }) {
   const feedback = useFeedback()
   const [editing, setEditing] = useState(null)
 
@@ -65,8 +65,13 @@ export default function Timeline({ events, match, canEdit, apply, matchId, empty
             <li key={e.id} className="group flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-950/50 py-2 pl-2 pr-1.5 text-sm" style={color ? { borderLeft: `3px solid ${color}` } : undefined}>
               <span className="mt-0.5 w-11 shrink-0 text-right font-display text-base font-semibold tabular-nums text-slate-300">{e.minute_label}</span>
               <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${meta.color}`} fill={meta.fill ? 'currentColor' : 'none'} aria-hidden />
-              <span className={`flex-1 ${e.type === 'period' ? 'italic text-slate-400' : 'text-slate-100'}`}>{describeEvent(e, match)}</span>
-              {canEdit && e.type !== 'period' && (
+              <span className={`flex-1 ${e.type === 'period' ? 'italic text-slate-400' : 'text-slate-100'}`}>
+                {describeEvent(e, match)}
+                {showAuthors && e.type !== 'period' && e.author_name && (
+                  <span className="ml-1.5 whitespace-nowrap text-[11px] text-slate-500">· {e.author_name}</span>
+                )}
+              </span>
+              {canEditEvent?.(e) && e.type !== 'period' && (
                 <span className="flex shrink-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
                   <button className="btn-ghost btn-sm !px-1.5" onClick={() => setEditing(e)} aria-label="Editar evento">
                     <Pencil className="h-3.5 w-3.5" />

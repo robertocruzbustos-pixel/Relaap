@@ -49,3 +49,21 @@ export const PHRASE_CATEGORIES = {
   apertura: 'Apertura', gol: 'Gol', ataque: 'Ataque', defensa: 'Defensa', arquero: 'Arquero',
   tarjetas: 'Tarjetas', emocion: 'Emoción', cierre: 'Cierre', otras: 'Otras',
 }
+
+// Roles dentro de un partido (el creador es "owner").
+export const ROLE_LABEL = {
+  owner: 'Propietario',
+  editor: 'Editor',
+  field: 'Campo',
+  commentator: 'Comentarista',
+  viewer: 'Solo lectura',
+}
+
+export const ROLE_HELP = {
+  editor: 'Todo: reloj, alineaciones, eventos y cambios. No puede borrar el partido ni gestionar al equipo.',
+  field: 'Para quien está en el estadio: carga eventos y cambios, y edita solo lo que cargó. No toca el reloj ni las fichas.',
+  commentator: 'Ve todo en vivo, escribe notas y participa del chat. No modifica el partido.',
+  viewer: 'Solo mira y participa del chat.',
+}
+
+export const ASSIGNABLE_ROLES = ['editor', 'field', 'commentator', 'viewer']

@@ -137,3 +137,39 @@ CREATE TABLE IF NOT EXISTS notes (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS notes_owner_idx ON notes(owner_id);
+
+-- ---------------------------------------------------------------------------
+-- Equipo de transmisión: roles ampliados, equipos guardados y chat del partido
+-- ---------------------------------------------------------------------------
+
+-- Roles: editor (todo), field (campo: eventos), commentator (ver, anotar y chat), viewer (solo lectura).
+ALTER TABLE match_members DROP CONSTRAINT IF EXISTS match_members_role_check;
+ALTER TABLE match_members ADD CONSTRAINT match_members_role_check
+  CHECK (role IN ('editor', 'field', 'commentator', 'viewer'));
+
+CREATE TABLE IF NOT EXISTS crews (
+  id         SERIAL PRIMARY KEY,
+  owner_id   INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  is_default BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS crews_owner_idx ON crews(owner_id);
+-- A lo sumo un equipo predeterminado por usuario.
+CREATE UNIQUE INDEX IF NOT EXISTS crews_one_default_idx ON crews(owner_id) WHERE is_default;
+
+CREATE TABLE IF NOT EXISTS crew_members (
+  crew_id INT NOT NULL REFERENCES crews(id) ON DELETE CASCADE,
+  user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role    TEXT NOT NULL DEFAULT 'editor' CHECK (role IN ('editor', 'field', 'commentator', 'viewer')),
+  PRIMARY KEY (crew_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS match_messages (
+  id         SERIAL PRIMARY KEY,
+  match_id   INT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  user_id    INT REFERENCES users(id) ON DELETE SET NULL,
+  body       TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS match_messages_match_idx ON match_messages(match_id, id);

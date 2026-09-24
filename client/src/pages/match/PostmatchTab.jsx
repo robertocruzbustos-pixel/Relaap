@@ -20,7 +20,7 @@ const STAT_ROWS = [
 ]
 
 export default function PostmatchTab({ ctx }) {
-  const { bundle, canEdit, apply, matchId } = ctx
+  const { bundle, canEdit, perms, apply, matchId } = ctx
   const { match, events } = bundle
   const feedback = useFeedback()
   const [run, busy] = useAction()
@@ -136,7 +136,7 @@ export default function PostmatchTab({ ctx }) {
 
           <section className="card p-4">
             <h2 className="mb-3 font-display text-xl font-semibold tracking-wide">Cronología completa</h2>
-            <Timeline events={events} match={match} canEdit={canEdit} apply={apply} matchId={matchId} />
+            <Timeline events={events} match={match} canEditEvent={perms.canModifyEvent} showAuthors={bundle.members.length > 0} apply={apply} matchId={matchId} />
           </section>
         </div>
       </div>
