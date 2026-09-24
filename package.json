@@ -1,0 +1,32 @@
+{
+  "name": "relator-pro",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Asistente web integral para relatores independientes de fútbol",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev:server\" \"npm --prefix client run dev\"",
+    "dev:server": "node --watch --env-file-if-exists=.env server/index.js",
+    "dev:db": "node server/dev-db.js",
+    "build": "npm --prefix client ci --include=dev && npm --prefix client run build",
+    "start": "node server/index.js",
+    "test": "node --test server/test/*.test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.22.3",
+    "express-rate-limit": "^7.5.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.0",
+    "ws": "^8.21.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.4",
+    "embedded-postgres": "^17.2.0-beta.15"
+  }
+}

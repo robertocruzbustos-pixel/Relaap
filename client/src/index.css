@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --color-ink: #020617;
+}
+
+@layer base {
+  html, body, #root { min-height: 100%; }
+  body {
+    @apply bg-slate-950 text-slate-100 font-sans antialiased;
+    margin: 0;
+  }
+  ::selection { @apply bg-emerald-500/40; }
+  * { scrollbar-width: thin; scrollbar-color: #334155 transparent; }
+  :focus-visible { @apply outline-2 outline-offset-2 outline-emerald-400; }
+}
+
+/* Componentes reutilizables (Tailwind v4: @utility permite usar @apply entre ellos). */
+@utility card { @apply rounded-xl border border-slate-800 bg-slate-900/70; }
+@utility label { @apply mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400; }
+@utility input {
+  @apply w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500
+    focus:border-emerald-500 focus:outline-none disabled:opacity-50;
+}
+@utility btn {
+  @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors
+    disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-primary { @apply btn bg-emerald-500 text-emerald-950 hover:bg-emerald-400; }
+@utility btn-secondary { @apply btn border border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700; }
+@utility btn-ghost { @apply btn text-slate-300 hover:bg-slate-800 hover:text-white; }
+@utility btn-danger { @apply btn bg-red-600 text-white hover:bg-red-500; }
+@utility btn-sm { @apply px-2.5! py-1.5! text-xs!; }
+@utility badge { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium; }
+
+/* Cancha: franjas de césped */
+.grass {
+  background-color: #15803d;
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.045) 0,
+    rgba(255, 255, 255, 0.045) 9.5238%,
+    transparent 9.5238%,
+    transparent 19.0476%
+  );
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+  100% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+}
+.live-dot { animation: pulse-ring 1.6s ease-out infinite; }
+
+/* Impresión / PDF del resumen post-partido */
+.print-only { display: none; }
+@media print {
+  body { background: #fff !important; color: #000 !important; }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  .print-page { color: #000 !important; }
+  .print-page * { color: #000 !important; border-color: #ccc !important; background: transparent !important; }
+}
