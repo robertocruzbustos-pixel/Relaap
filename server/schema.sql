@@ -173,3 +173,38 @@ CREATE TABLE IF NOT EXISTS match_messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS match_messages_match_idx ON match_messages(match_id, id);
+
+-- ---------------------------------------------------------------------------
+-- Seguimiento en vivo con la API deportiva (sugerencias de eventos)
+-- ---------------------------------------------------------------------------
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_follow       BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_follow_user  INT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_follow_since TIMESTAMPTZ;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_interval     INT NOT NULL DEFAULT 120;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_last_sync    TIMESTAMPTZ;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_status       TEXT;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_elapsed      INT;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_home_goals   INT;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_away_goals   INT;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_remaining    INT;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_error        TEXT;
+
+CREATE TABLE IF NOT EXISTS api_suggestions (
+  id                  SERIAL PRIMARY KEY,
+  match_id            INT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  api_key             TEXT NOT NULL,
+  type                TEXT NOT NULL,
+  side                TEXT CHECK (side IN ('home','away')),
+  elapsed             INT NOT NULL DEFAULT 0,
+  extra               INT NOT NULL DEFAULT 0,
+  player_name         TEXT,
+  related_player_name TEXT,
+  api_player_id       INT,
+  api_related_id      INT,
+  detail              TEXT NOT NULL DEFAULT '',
+  status              TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','dismissed','matched')),
+  resolved_by         INT REFERENCES users(id) ON DELETE SET NULL,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (match_id, api_key)
+);
+CREATE INDEX IF NOT EXISTS api_suggestions_match_idx ON api_suggestions(match_id, status);

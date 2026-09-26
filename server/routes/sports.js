@@ -5,7 +5,7 @@ import { HttpError, idParam, parse, wrap } from '../lib/http.js'
 import { gridsToXY, parseFormation } from '../lib/domain.js'
 import { createMatch } from '../lib/matchService.js'
 import {
-  TTL, apiGet, mapPosition, normFixture, normLeague, normLineup, normStanding, normTeam, resolveApiKey,
+  TTL, apiGet, fetchAccountStatus, mapPosition, normFixture, normLeague, normLineup, normStanding, normTeam, resolveApiKey,
 } from '../lib/apiFootball.js'
 
 const router = Router()
@@ -19,6 +19,14 @@ router.get(
   wrap(async (req, res) => {
     const { source } = await resolveApiKey(req.user.id)
     res.json({ configured: Boolean(source), source })
+  }),
+)
+
+// Plan y consultas usadas hoy (este endpoint de API-Football no descuenta cuota).
+router.get(
+  '/account',
+  wrap(async (req, res) => {
+    res.json(await fetchAccountStatus(req.user.id))
   }),
 )
 

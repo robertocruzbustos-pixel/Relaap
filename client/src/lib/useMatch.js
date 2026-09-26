@@ -29,7 +29,9 @@ export function useMatch(matchId, userId) {
   const apply = useCallback(
     (data) => {
       syncClock(data.server_time)
-      const bundle = { match: data.match, players: data.players, events: data.events, members: data.members }
+      const bundle = {
+        match: data.match, players: data.players, events: data.events, members: data.members, suggestions: data.suggestions ?? [],
+      }
       const role = data.role ?? deriveRole(bundle, userId)
       setState({ loading: false, error: role ? null : 'not_found', bundle, role })
     },

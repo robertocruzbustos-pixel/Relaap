@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Eye, ListOrdered, MessageCircle, MessageSquareQuote, NotebookPen, Radio, Users } from 'lucide-react'
 import { api } from '../../lib/api.js'
 import { useElapsed } from '../../lib/useElapsed.js'
+import ApiFollowPanel from '../../components/ApiFollowPanel.jsx'
 import Bench from '../../components/Bench.jsx'
 import ChatPanel from '../../components/ChatPanel.jsx'
 import ClockControls from '../../components/ClockControls.jsx'
@@ -76,6 +77,8 @@ export default function LiveTab({ ctx }) {
             <Eye className="h-4 w-4 shrink-0" /> {ROLE_BANNER[perms.role]}
           </p>
         )}
+
+        {match.external_id && <ApiFollowPanel bundle={bundle} perms={perms} apply={apply} matchId={matchId} />}
 
         <Pitch
           players={onPitch}

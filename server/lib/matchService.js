@@ -1,12 +1,12 @@
 import { query } from '../db.js'
 import { HttpError } from './http.js'
-import { autoLineup, deriveFromEvents } from './domain.js'
+import { autoLineup, deriveFromEvents, elapsedSeconds, minuteLabel } from './domain.js'
 
 const POS_ORDER_SQL = "array_position(ARRAY['G','D','M','F'], position)"
 
 /** Estado completo de un partido (sin rol: el rol es por usuario, no se difunde). */
 export async function loadBundle(matchId) {
-  const [matchRes, playersRes, eventsRes, membersRes] = await Promise.all([
+  const [matchRes, playersRes, eventsRes, membersRes, suggestionsRes] = await Promise.all([
     query('SELECT m.*, u.name AS owner_name FROM matches m JOIN users u ON u.id = m.owner_id WHERE m.id = $1', [matchId]),
     query(
       `SELECT * FROM match_players WHERE match_id = $1
@@ -23,6 +23,7 @@ export async function loadBundle(matchId) {
          JOIN users u ON u.id = mm.user_id WHERE mm.match_id = $1 ORDER BY u.name`,
       [matchId],
     ),
+    query("SELECT * FROM api_suggestions WHERE match_id = $1 AND status = 'pending' ORDER BY elapsed, extra, id", [matchId]),
   ])
   if (!matchRes.rows[0]) throw new HttpError(404, 'Partido no encontrado.')
   return {
@@ -30,6 +31,7 @@ export async function loadBundle(matchId) {
     players: playersRes.rows,
     events: eventsRes.rows,
     members: membersRes.rows,
+    suggestions: suggestionsRes.rows,
     server_time: Date.now(),
   }
 }
@@ -163,4 +165,70 @@ export async function addCrewToMatch(client, matchId, crewId, ownerId) {
     [matchId, crewId, ownerId],
   )
   return rowCount
+}
+
+const SCORING_TYPES = ['goal', 'own_goal', 'penalty_goal']
+
+/**
+ * Registra un evento del partido (usado por la botonera manual y al aceptar sugerencias de la API).
+ * data: { type, side?, match_player_id?, player_name?, related_player_name?, description?, clock_seconds?, period? }
+ */
+export async function createEvent(client, matchId, data, userId) {
+  const { rows } = await client.query('SELECT * FROM matches WHERE id = $1 FOR UPDATE', [matchId])
+  const match = rows[0]
+
+  let eventSide = data.side ?? null
+  let playerName = data.player_name ?? null
+  if (data.match_player_id) {
+    const mp = (await client.query('SELECT * FROM match_players WHERE id = $1 AND match_id = $2', [data.match_player_id, matchId]))
+      .rows[0]
+    if (!mp) throw new HttpError(400, 'Jugador inválido para este partido.')
+    eventSide = mp.side
+    playerName = playerName ?? mp.name
+  }
+  if (SCORING_TYPES.includes(data.type) && !eventSide) {
+    throw new HttpError(400, 'Elegí el equipo o el jugador que convirtió.')
+  }
+
+  const seconds = data.clock_seconds ?? elapsedSeconds(match)
+  const period = data.period ?? match.period
+  await client.query(
+    `INSERT INTO match_events (match_id, type, side, match_player_id, minute_label, period, clock_seconds,
+                              player_name, related_player_name, description, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [matchId, data.type, eventSide, data.match_player_id ?? null, data.minute_label ?? minuteLabel(period, seconds), period, seconds,
+      playerName, data.related_player_name ?? null, data.description ?? '', userId],
+  )
+  await recompute(client, matchId)
+  if (data.type === 'red' && data.match_player_id) {
+    await client.query('UPDATE match_players SET on_pitch = false WHERE id = $1', [data.match_player_id])
+  }
+}
+
+/** Cambio: entra `inId` en la posición de `outId`. opts: { clock_seconds, period, minute_label } para eventos con tiempo propio. */
+export async function substitute(client, matchId, outId, inId, userId, opts = {}) {
+  const { rows: matchRows } = await client.query('SELECT * FROM matches WHERE id = $1 FOR UPDATE', [matchId])
+  const match = matchRows[0]
+  const { rows } = await client.query('SELECT * FROM match_players WHERE match_id = $1 AND id = ANY($2::int[])', [
+    matchId, [outId, inId],
+  ])
+  const out = rows.find((p) => p.id === outId)
+  const incoming = rows.find((p) => p.id === inId)
+  if (!out || !incoming) throw new HttpError(400, 'Jugadores inválidos.')
+  if (out.side !== incoming.side) throw new HttpError(400, 'Los dos jugadores deben ser del mismo equipo.')
+  if (!out.on_pitch) throw new HttpError(400, 'El jugador que sale no está en cancha.')
+  if (incoming.on_pitch || incoming.red) throw new HttpError(400, 'El jugador que entra no está disponible.')
+
+  await client.query('UPDATE match_players SET on_pitch = true, x = $2, y = $3 WHERE id = $1', [incoming.id, out.x, out.y])
+  await client.query('UPDATE match_players SET on_pitch = false, x = NULL, y = NULL WHERE id = $1', [out.id])
+
+  const seconds = opts.clock_seconds ?? elapsedSeconds(match)
+  const period = opts.period ?? match.period
+  await client.query(
+    `INSERT INTO match_events (match_id, type, side, match_player_id, minute_label, period, clock_seconds,
+                              player_name, related_player_name, description, created_by)
+     VALUES ($1,'substitution',$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [matchId, out.side, incoming.id, opts.minute_label ?? minuteLabel(period, seconds), period, seconds,
+      incoming.name, out.name, `Entra ${incoming.name}, sale ${out.name}`, userId],
+  )
 }

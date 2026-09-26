@@ -16,6 +16,7 @@ cancha táctica, reloj y eventos, y lo archivás con estadísticas y resumen. Pe
 | **Equipos y planteles** | Carga manual (con “carga rápida” pegando la lista) o importación desde la API deportiva. |
 | **Equipo de transmisión** | Compartí un partido por email con un **rol** (Editor, Campo, Comentarista, Solo lectura). Todos ven los cambios al instante (WebSocket), quién está conectado y **quién cargó cada evento**. Podés guardar un **equipo de transmisión** y sumarlo con un click, o dejarlo como predeterminado para que cada partido nuevo lo incluya. Hay **chat** por partido. |
 | **Integración deportiva** | API-Football: buscar partidos por fecha/liga/equipo, importar partido + plantillas + **alineación oficial** con posiciones en la cancha. |
+| **Seguimiento en vivo (opcional)** | Con un partido importado, "Seguir con la API" consulta cada 1–5 min y propone goles, tarjetas, cambios y revisiones del VAR como **sugerencias** que una persona acepta o descarta con un click (nada entra solo). Usa el minuto de la API, evita duplicar lo ya cargado a mano y se detiene solo al terminar el partido o si quedan pocas consultas. |
 
 El reloj lo lleva el **servidor** (no el navegador): si se cierra la pestaña o se cae el WiFi, el partido sigue marcando bien y todos los dispositivos ven la misma hora.
 
@@ -96,6 +97,11 @@ Notas:
 `.github/workflows/ci.yml` corre los tests contra un Postgres de servicio y compila el frontend en cada push y pull request.
 
 ## API-Football
+
+**Seguimiento en vivo:** cada consulta descuenta de tu cuota diaria (plan gratuito: ~100). Con el intervalo por defecto de 2 minutos
+un partido completo gasta ~60–70 consultas, así que entra un partido por día. La app muestra cuántas te quedan, se detiene al
+finalizar el partido, tras 4 horas o al quedar con 5 consultas, y "Consultar ahora" gasta una sola. En Ajustes ves tu plan y las
+consultas usadas hoy (ese dato no consume cuota).
 
 - Registro y key: <https://www.api-football.com/> (el plan gratuito da ~100 consultas/día y limita temporadas).
 - Los datos se piden **una vez** y se guardan en tu base (equipos, jugadores, partido, alineación); además el servidor cachea

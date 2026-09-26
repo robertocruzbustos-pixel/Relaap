@@ -5,10 +5,16 @@ import { broadcast } from '../realtime.js'
 import { HttpError, idParam, parse, wrap } from '../lib/http.js'
 import { matchAccess } from '../lib/access.js'
 import {
-  EVENT_TYPES, PERIOD_EVENT_TEXT, PERIOD_START, applyClockAction, elapsedSeconds, minuteLabel, parseFormation,
+  EVENT_TYPES, PERIOD_EVENT_TEXT, PERIOD_START, applyClockAction, parseFormation,
 } from '../lib/domain.js'
-import { ROLES, canCreateEvent, canModifyEvent } from '../lib/permissions.js'
-import { addCrewToMatch, applyLineup, createMatch, insertMatchPlayers, loadBundle, recompute } from '../lib/matchService.js'
+import { ROLES, can, canCreateEvent, canModifyEvent } from '../lib/permissions.js'
+import { resolveApiKey } from '../lib/apiFootball.js'
+import {
+  MAX_INTERVAL, MIN_INTERVAL, acceptSuggestion, dismissSuggestion, startFollow, stopFollow, syncMatch,
+} from '../lib/liveSync.js'
+import {
+  addCrewToMatch, applyLineup, createEvent, createMatch, insertMatchPlayers, loadBundle, recompute, substitute,
+} from '../lib/matchService.js'
 
 const router = Router()
 
@@ -186,8 +192,6 @@ const eventSchema = z.object({
   clock_seconds: z.number().int().min(0).optional(),
 })
 
-const SCORING_TYPES = ['goal', 'own_goal', 'penalty_goal']
-
 router.post(
   '/:id/events',
   eventAccess,
@@ -196,37 +200,7 @@ router.post(
     if (!canCreateEvent(req.role, data.type)) {
       throw new HttpError(403, 'Tu rol solo permite cargar notas en este partido.')
     }
-    await tx(async (client) => {
-      const { rows } = await client.query('SELECT * FROM matches WHERE id = $1 FOR UPDATE', [req.matchId])
-      const match = rows[0]
-
-      let eventSide = data.side ?? null
-      let playerName = data.player_name ?? null
-      if (data.match_player_id) {
-        const mp = (
-          await client.query('SELECT * FROM match_players WHERE id = $1 AND match_id = $2', [data.match_player_id, req.matchId])
-        ).rows[0]
-        if (!mp) throw new HttpError(400, 'Jugador inválido para este partido.')
-        eventSide = mp.side
-        playerName = playerName ?? mp.name
-      }
-      if (SCORING_TYPES.includes(data.type) && !eventSide) {
-        throw new HttpError(400, 'Elegí el equipo o el jugador que convirtió.')
-      }
-
-      const seconds = data.clock_seconds ?? elapsedSeconds(match)
-      await client.query(
-        `INSERT INTO match_events (match_id, type, side, match_player_id, minute_label, period, clock_seconds,
-                                  player_name, related_player_name, description, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-        [req.matchId, data.type, eventSide, data.match_player_id ?? null, minuteLabel(match.period, seconds),
-          match.period, seconds, playerName, data.related_player_name ?? null, data.description ?? '', req.user.id],
-      )
-      await recompute(client, req.matchId)
-      if (data.type === 'red' && data.match_player_id) {
-        await client.query('UPDATE match_players SET on_pitch = false WHERE id = $1', [data.match_player_id])
-      }
-    })
+    await tx((client) => createEvent(client, req.matchId, data, req.user.id))
     await publish(res, req.matchId, 201)
   }),
 )
@@ -389,32 +363,7 @@ router.post(
   substituteAccess,
   wrap(async (req, res) => {
     const data = parse(subSchema, req.body)
-    await tx(async (client) => {
-      const { rows: matchRows } = await client.query('SELECT * FROM matches WHERE id = $1 FOR UPDATE', [req.matchId])
-      const match = matchRows[0]
-      const { rows } = await client.query(
-        'SELECT * FROM match_players WHERE match_id = $1 AND id = ANY($2::int[])',
-        [req.matchId, [data.out_id, data.in_id]],
-      )
-      const out = rows.find((p) => p.id === data.out_id)
-      const incoming = rows.find((p) => p.id === data.in_id)
-      if (!out || !incoming) throw new HttpError(400, 'Jugadores inválidos.')
-      if (out.side !== incoming.side) throw new HttpError(400, 'Los dos jugadores deben ser del mismo equipo.')
-      if (!out.on_pitch) throw new HttpError(400, 'El jugador que sale no está en cancha.')
-      if (incoming.on_pitch || incoming.red) throw new HttpError(400, 'El jugador que entra no está disponible.')
-
-      await client.query('UPDATE match_players SET on_pitch = true, x = $2, y = $3 WHERE id = $1', [incoming.id, out.x, out.y])
-      await client.query('UPDATE match_players SET on_pitch = false, x = NULL, y = NULL WHERE id = $1', [out.id])
-
-      const seconds = elapsedSeconds(match)
-      await client.query(
-        `INSERT INTO match_events (match_id, type, side, match_player_id, minute_label, period, clock_seconds,
-                                  player_name, related_player_name, description, created_by)
-         VALUES ($1,'substitution',$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [req.matchId, out.side, incoming.id, minuteLabel(match.period, seconds), match.period, seconds,
-          incoming.name, out.name, `Entra ${incoming.name}, sale ${out.name}`, req.user.id],
-      )
-    })
+    await tx((client) => substitute(client, req.matchId, data.out_id, data.in_id, req.user.id))
     await publish(res, req.matchId, 201)
   }),
 )
@@ -469,6 +418,75 @@ router.post(
     if (!owned.rows[0]) throw new HttpError(404, 'Equipo de transmisión no encontrado.')
     await tx((client) => addCrewToMatch(client, req.matchId, crew_id, req.user.id))
     await publish(res, req.matchId, 201)
+  }),
+)
+
+// ---------- Seguimiento en vivo con la API deportiva ----------
+
+const followSchema = z.object({
+  enabled: z.boolean(),
+  interval: z.number().int().min(MIN_INTERVAL).max(MAX_INTERVAL).default(120),
+})
+
+// Activa/desactiva el seguimiento automático (usa la API key de quien lo activa).
+router.post(
+  '/:id/follow',
+  edit,
+  wrap(async (req, res) => {
+    const data = parse(followSchema, req.body)
+    if (!data.enabled) {
+      await stopFollow(req.matchId)
+    } else {
+      const { rows } = await query('SELECT external_id FROM matches WHERE id = $1', [req.matchId])
+      if (!rows[0].external_id) throw new HttpError(400, 'Solo se puede seguir con la API un partido importado de la API deportiva.')
+      if (!(await resolveApiKey(req.user.id)).key) {
+        throw new HttpError(400, 'Cargá tu API key en Ajustes para seguir el partido con la API.')
+      }
+      await startFollow(req.matchId, req.user.id, data.interval)
+    }
+    await publish(res, req.matchId)
+  }),
+)
+
+// Una consulta puntual ("Consultar ahora"): gasta 1 consulta de tu cuota aunque el seguimiento esté apagado.
+router.post(
+  '/:id/follow/sync',
+  edit,
+  wrap(async (req, res) => {
+    await query('UPDATE matches SET api_follow_user = COALESCE(api_follow_user, $2) WHERE id = $1', [req.matchId, req.user.id])
+    await syncMatch(req.matchId, { force: true })
+    await publish(res, req.matchId)
+  }),
+)
+
+// Cada rol puede resolver solo las sugerencias que también podría cargar a mano.
+async function assertCanResolve(req, suggestionId) {
+  const { rows } = await query('SELECT type FROM api_suggestions WHERE id = $1 AND match_id = $2', [suggestionId, req.matchId])
+  if (!rows[0]) throw new HttpError(404, 'La sugerencia no existe.')
+  const allowed = rows[0].type === 'substitution' ? can(req.role, 'substitute') : canCreateEvent(req.role, rows[0].type)
+  if (!allowed) throw new HttpError(403, 'Tu rol no puede aceptar este tipo de sugerencia.')
+}
+
+router.post(
+  '/:id/suggestions/:sid/accept',
+  eventAccess,
+  wrap(async (req, res) => {
+    const sid = idParam(req.params.sid, 'sugerencia')
+    const body = parse(z.object({ side: side.optional() }), req.body ?? {})
+    await assertCanResolve(req, sid)
+    await acceptSuggestion(req.matchId, sid, req.user.id, body)
+    res.json(await loadBundle(req.matchId))
+  }),
+)
+
+router.post(
+  '/:id/suggestions/:sid/dismiss',
+  eventAccess,
+  wrap(async (req, res) => {
+    const sid = idParam(req.params.sid, 'sugerencia')
+    await assertCanResolve(req, sid)
+    await dismissSuggestion(req.matchId, sid, req.user.id)
+    res.json(await loadBundle(req.matchId))
   }),
 )
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CircleCheck, ExternalLink, KeyRound, LogOut, Trash2, Users } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { RefreshCw } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.jsx'
 import { Field, PageHeader, useAction, useFeedback } from '../components/ui.jsx'
@@ -13,11 +14,22 @@ export default function Settings() {
   const [apiKey, setApiKey] = useState('')
   const [pw, setPw] = useState({ current: '', next: '' })
   const [sports, setSports] = useState(null)
+  const [account, setAccount] = useState(null) // { plan, used, limit } | { error }
 
   const loadSports = () => api.get('/sports/status').then(setSports).catch(() => setSports({ configured: false, source: null }))
   useEffect(() => {
     loadSports()
   }, [])
+
+  const loadAccount = () =>
+    api
+      .get('/sports/account')
+      .then(setAccount)
+      .catch((err) => setAccount({ error: err.message }))
+
+  useEffect(() => {
+    if (sports?.configured) loadAccount()
+  }, [sports?.configured])
 
   const patchMe = (body, okMessage) =>
     run(async () => {
@@ -77,6 +89,24 @@ export default function Settings() {
                 : 'Usando la API key compartida del servidor.'
               : 'Sin API key: podés cargar todo manualmente.'}
           </p>
+        )}
+
+        {sports?.configured && account && (
+          <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm">
+            {account.error ? (
+              <span className="text-amber-300">No se pudo leer tu plan: {account.error}</span>
+            ) : (
+              <>
+                <span>Plan: <strong>{account.plan ?? '—'}</strong></span>
+                <span>
+                  Consultas hoy: <strong>{account.used ?? '—'}</strong> / {account.limit ?? '—'}
+                </span>
+              </>
+            )}
+            <button type="button" className="btn-ghost btn-sm ml-auto" onClick={loadAccount} aria-label="Actualizar estado de la cuenta">
+              <RefreshCw className="h-3.5 w-3.5" /> Actualizar
+            </button>
+          </div>
         )}
 
         <form

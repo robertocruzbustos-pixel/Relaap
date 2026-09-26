@@ -24,10 +24,11 @@ export async function resolveApiKey(userId) {
   return { key: null, source: null }
 }
 
-export async function apiGet(userId, path, params = {}, ttl = TTL.medium) {
+/** Igual que apiGet pero devuelve también las consultas que te quedan hoy: { data, remaining, limit }. */
+export async function apiGetMeta(userId, path, params = {}, ttl = TTL.medium) {
   const { key, source } = await resolveApiKey(userId)
   if (!key) {
-    throw new HttpError(503, 'Falta configurar la API key de API-Football (Ajustes → Integración deportiva).')
+    throw Object.assign(new HttpError(503, 'Falta configurar la API key de API-Football (Ajustes → Integración deportiva).'), { code: 'no_key' })
   }
   const qs = new URLSearchParams(
     Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''),
@@ -35,7 +36,8 @@ export async function apiGet(userId, path, params = {}, ttl = TTL.medium) {
   const url = `${baseUrl()}${path}${qs ? `?${qs}` : ''}`
   const cacheKey = `${source}:${key.slice(-6)}:${url}`
   const hit = cache.get(cacheKey)
-  if (hit && hit.expires > Date.now()) return hit.data
+  // ttl 0 = dato en vivo: nunca se sirve ni se guarda en caché.
+  if (ttl > 0 && hit && hit.expires > Date.now()) return hit.value
 
   let res
   try {
@@ -51,15 +53,40 @@ export async function apiGet(userId, path, params = {}, ttl = TTL.medium) {
   const hasErrors = Array.isArray(errors) ? errors.length > 0 : errors && Object.keys(errors).length > 0
   if (hasErrors) {
     const msg = Object.values(errors).join(' ')
-    if (/limit/i.test(msg)) throw new HttpError(429, 'Se alcanzó el límite diario de la API deportiva.')
-    if (/token|key|access/i.test(msg)) throw new HttpError(401, 'La API key de API-Football no es válida.')
+    const keys = Array.isArray(errors) ? [] : Object.keys(errors)
+    const fail = (status, message, code) => Object.assign(new HttpError(status, message), { code })
+    if (keys.includes('token')) throw fail(401, 'La API key de API-Football no es válida.', 'token')
+    if (keys.includes('plan')) throw fail(403, `Tu plan de API-Football no permite esta consulta: ${msg}`, 'plan')
+    if (keys.includes('rateLimit')) throw fail(429, 'Demasiadas consultas por minuto a la API deportiva. Esperá unos segundos.', 'rate_minute')
+    if (keys.includes('requests') || /limit/i.test(msg)) throw fail(429, 'Se alcanzó el límite diario de la API deportiva.', 'daily_limit')
     throw new HttpError(502, `API-Football: ${msg}`)
   }
 
   const data = json.response ?? []
-  cache.set(cacheKey, { data, expires: Date.now() + ttl })
-  if (cache.size > 500) cache.delete(cache.keys().next().value)
-  return data
+  const num = (h) => (res.headers.get(h) === null ? null : Number(res.headers.get(h)))
+  const value = { data, remaining: num('x-ratelimit-requests-remaining'), limit: num('x-ratelimit-requests-limit') }
+  if (ttl > 0) {
+    cache.set(cacheKey, { value, expires: Date.now() + ttl })
+    if (cache.size > 500) cache.delete(cache.keys().next().value)
+  }
+  return value
+}
+
+export async function apiGet(userId, path, params = {}, ttl = TTL.medium) {
+  return (await apiGetMeta(userId, path, params, ttl)).data
+}
+
+/** Plan y consultas usadas hoy. El endpoint /status de API-Football no descuenta de la cuota. */
+export async function fetchAccountStatus(userId) {
+  const { data } = await apiGetMeta(userId, '/status', {}, 30_000)
+  const r = Array.isArray(data) ? data[0] : data
+  return {
+    plan: r?.subscription?.plan ?? null,
+    active: r?.subscription?.active ?? null,
+    ends: r?.subscription?.end ?? null,
+    used: r?.requests?.current ?? null,
+    limit: r?.requests?.limit_day ?? null,
+  }
 }
 
 export { TTL }

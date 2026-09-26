@@ -3,6 +3,7 @@ import { config } from './config.js'
 import { migrate, pool } from './db.js'
 import { createApp } from './app.js'
 import { attachRealtime } from './realtime.js'
+import { resumeFollows } from './lib/liveSync.js'
 
 async function main() {
   await waitForDb()
@@ -10,6 +11,7 @@ async function main() {
 
   const server = http.createServer(createApp())
   attachRealtime(server)
+  await resumeFollows()
   server.listen(config.port, () => {
     console.log(`[server] escuchando en el puerto ${config.port} (${config.isProd ? 'producción' : 'desarrollo'})`)
   })
